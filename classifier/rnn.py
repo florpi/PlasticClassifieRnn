@@ -2,7 +2,6 @@ from collections import OrderedDict
 
 import numpy as np
 import tensorflow as tf
-
 # From our repo
 import  utils
 
@@ -13,18 +12,18 @@ def create_loss(predictions, decoder_reconstruction, labels, class_weights, n_cl
     """
     with tf.name_scope('Loss'):
         # Gather class weights for particular dataset examples
-        loss_weights = 1.0
-        if class_weights is not None:
-            weights = tf.gather(class_weights, labels['target'])
-        # Create classification and reconstruction losses
         classification_weight = 1.0; reconstruction_weight = 2.0;
-        create_classification_loss(predictions['scores'], labels['target'], classification_weight*weights, n_class)
+        class_weights *= classification_weight
+        weights = tf.gather(class_weights, labels['target'])
+        # Create classification and reconstruction losses
+        create_classification_loss(predictions['scores'], labels['target'], weights, n_class)
         #create_reconstruction_loss(decoder_reconstruction, features, reconstruction_weight*weights, num_samples)
 
 def create_classification_loss(predictions, labels, class_weights, n_class):
     """
     """
     with tf.name_scope('Classification'):
+        
         one_hot_labels = slim.one_hot_encoding(labels, n_class, on_value=1.0, off_value=0.0)
         tf.losses.log_loss(one_hot_labels,
                            predictions,
@@ -188,7 +187,7 @@ def autoencoder(features, num_samples, batch_size, seq_len, num_feats, keep_prob
     return decoder_reconstruction, flatten_embeddings
 
  
-def forward(static_features, features, num_samples, n_class, is_training, reuse_states=True, direction='forward'):
+def rnn_logits(features, num_samples, is_training, reuse_states=True, direction='forward'):
 
     keep_prob = 0.85 if is_training else 1.0
 
@@ -198,11 +197,27 @@ def forward(static_features, features, num_samples, n_class, is_training, reuse_
     batch_size, seq_len, num_feats = utils.combined_static_and_dynamic_shape(features[0])
 
     flatten_embeddings, _ = encoder(hidden_units, features, num_samples, keep_prob, direction, reuse_states, batch_size)
+    return flatten_embeddings
 
+def fcn_logits(features, is_training):
+    activation = 'tanh'
+    hidden_units = [512,128,32]
+    # Define regularizer
+    regularizer = tf.contrib.layers.l2_regularizer(scale=0.05)
+
+    with tf.name_scope('FCN'):
+        net = features
+        for hidden_unit in hidden_units:
+            net = tf.contrib.layers.batch_norm(net, is_training=is_training, fused=True)
+            net = tf.layers.dense(net, units=hidden_unit, activation=activation, 
+                    kernel_regularizer=regularizer)
+    return net
+
+def dense_logits(features,  n_class):
     activation = 'tanh'
     predictions = {}
     with tf.name_scope('Predictions'):
-        predictions['scores'] = tf.layers.dense(flatten_embeddings, n_class, activation=tf.nn.softmax)
+        predictions['scores'] = tf.layers.dense(features, n_class, activation=tf.nn.softmax)
         predictions['classes'] = tf.argmax(predictions['scores'], -1, name='Classes')
 
     return predictions

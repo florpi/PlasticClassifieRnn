@@ -13,7 +13,7 @@ NUM_CATEGORIES = inputs.NUM_CATEGORIES
 PLASTICC_CATEGORIES = inputs.PLASTICC_CATEGORIES
 NUM_BANDS = inputs.NUM_BANDS
 # Class weights from https://www.kaggle.com/c/PLAsTiCC-2018/discussion/67194
-KAGGLE_WEIGHTS =  [1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1] # without 99 class
+KAGGLE_WEIGHTS =  [1., 2., 1., 1., 1., 1., 1., 2., 1., 1., 1., 1., 1., 1.] # without 99 class
 
 slim = tf.contrib.slim
 
@@ -32,24 +32,53 @@ def model_fn(features, labels, mode, params ):
     # Get or create global step
     global_step = tf.train.get_or_create_global_step()
 
-    if params['model'] == 'RNN':
+    if params['model'] == 'fourier':
         dft_features = [features['band_%i/dft'%band] for band in range(NUM_BANDS)]
         num_samples = [features['band_%i/dft/num_samples'%band] for band in range(NUM_BANDS)]
-        predictions = rnn.forward(dft_features, num_samples, NUM_CATEGORIES, mode == tf.estimator.Modekeys.TRAIN)
+
+        embeddings = rnn.rnn_logits(dft_features, num_samples, mode==tf.estimator.ModeKeys.TRAIN)
+        predictions = rnn.dense_logits(embeddings, NUM_CATEGORIES) 
+
+    elif params['model'] == 'time':
+        time_features = [features['band_%i/times'%band] for band in range(NUM_BANDS)]
+        num_samples = [features['band_%i/num_samples'%band] for band in range(NUM_BANDS)]
+
+        embeddings = rnn.rnn_logits(time_features, num_samples, mode==tf.estimator.ModeKeys.TRAIN)
+        predictions = rnn.dense_logits(embeddings, NUM_CATEGORIES) 
+
+
+    elif params['model'] == 'joint':
+        dft_features = [features['band_%i/dft'%band] for band in range(NUM_BANDS)]
+        num_samples = [features['band_%i/dft/num_samples'%band] for band in range(NUM_BANDS)]
+
+        with tf.variable_scope("FourierEmbeddings"):
+            dft_embeddings = rnn.rnn_logits(dft_features, num_samples, 
+                    mode == tf.estimator.ModeKeys.TRAIN)
+
+        time_features = [features['band_%i/times'%band] for band in range(NUM_BANDS)]
+        num_samples = [features['band_%i/num_samples'%band] for band in range(NUM_BANDS)]
+
+        with tf.variable_scope("TemporalEmbeddings"):
+            time_embeddings = rnn.rnn_logits(time_features, num_samples,
+                    mode==tf.estimator.ModeKeys.TRAIN)
+        
+        embeddings = tf.concat([dft_embeddings, time_embeddings], axis=-1)
+        fcn = rnn.fcn_logits(embeddings, mode==tf.estimator.ModeKeys.TRAIN) 
+        predictions = rnn.dense_logits(fcn, NUM_CATEGORIES) 
 
     else:
-        raise ValueError("Not implemented, choose 'RNN'. Selected %s"%params['model'])
+        raise ValueError("Not implemented, choose ['fourier', 'time', 'joint']'. Selected %s"%params['model'])
 
     total_loss = None
     if mode in (tf.estimator.ModeKeys.TRAIN, tf.estimator.ModeKeys.EVAL):
         # Compute weights
-        weights = None
+        weights = np.asarray(KAGGLE_WEIGHTS)
         if params['class_weights'] is not None:
             tf.logging.info('Weighting loss by class frequency.')
-            weights = np.asarray(params['class_weights'], dtype=np.float32)*np.asarray(KAGGLE_WEIGHTS)
+            weights *= np.asarray(params['class_weights'], dtype=np.float32)
 
         # Create loss
-        rnn.create_loss(predictions, labels, weights, NUM_CATEGORIES, dft_features, num_samples)
+        rnn.create_loss(predictions, None, labels, weights, NUM_CATEGORIES, None, num_samples)
         # Get total loss
         total_loss = tf.losses.get_total_loss(add_regularization_losses=True, name='total_loss')
 
