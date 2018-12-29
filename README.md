@@ -5,7 +5,7 @@ This repository contains our solution to the Kaggle challenge for astronomical s
 
 The main difficulty of the challenge is dealing with different bands that have recorded information from the same source at different times. The time series are unevenly sampled and we need a way to combine their information. We have implemented a recurrent neural network to process the given sequential data, sharing its weights accross bands to look for the same features on every band. Later on, we combine what they've learned in a fully connected layer to produce the final classificiation. In this way, we do not need any sort of padding and sharing weights makes our solution computationally efficient. The architecture of the RNN is shown at figure 1. 
 
-![Alt text](architecture.png?raw=true "Architecture of the RNN used to classify the astronomical sources")
+![Alt text](RNN_architecture.png?raw=true "Architecture of the RNN used to classify the astronomical sources")
 
 The sequential features we have used are flux, flux error, time difference between measurements (mjd) and whether the source would have been detected, together with some extra features computed using unevenly sampled fourier transforms as implemented here [2]. These Fourier features are: the magniuted of the dfft, the unwrapped phase, the periodogram and the true alarm probability of  agiven period to be produced by an actual signal.
 
