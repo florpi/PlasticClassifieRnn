@@ -50,6 +50,8 @@ def _get_features_dict(input_dict, train_stats=None):
     # Flux normalization
     flux_list = [features['band_%i/augmented_flux'%band] for band in range(NUM_BANDS)]
     preprocessed_fluxes = preprocess._standard_normalize(flux_list)
+    all_fluxes = tf.stack(flux_list)
+    features['flux_range'] = tf.log(tf.reduce_max(all_fluxes) - tf.reduce_min(all_fluxes))
     for band, flux in enumerate(preprocessed_fluxes):
         features['band_%i/preprocessed_flux'%band] = flux
 
@@ -276,6 +278,7 @@ def build_dataset(validation_fold, dataset_dir, batch_size=1, is_training=True,
             features_padded_shapes.update({'band_%i/original_flux'%band: [None]})
 
     features_padded_shapes['object_id'] = []
+    features_padded_shapes['flux_range'] = []
 
     dataset = dataset.padded_batch(batch_size,
                                    # Padded shapes, still without batch!
