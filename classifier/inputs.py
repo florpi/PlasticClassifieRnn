@@ -34,7 +34,6 @@ def _get_features_dict(input_dict, train_stats=None):
                                ...
     """
     features = {'object_id':input_dict['object_id']}
-    features = {}
     encoder_feats = {}
     for band in range(NUM_BANDS):
         # Add time differences
@@ -60,6 +59,11 @@ def _get_features_dict(input_dict, train_stats=None):
     for band, time_diff in enumerate(preprocessed_time):
         features['band_%i/preprocessed_time_diff'%band] = time_diff
 
+    # temporal features
+    stacked_times = [tf.stack([features['band_%i/time_diff'%band],
+                                input_dict['band_%i/flux'%band],
+                                input_dict['band_%i/flux_err'%band],
+                                tf.to_float(input_dict['band_%i/detected'%band])], axis = -1) for band in range(NUM_BANDS)]
 
     # dft periodogram features
     stacked_dfts = [tf.stack([input_dict['band_%i/dft/freqs'%band],
@@ -70,7 +74,14 @@ def _get_features_dict(input_dict, train_stats=None):
 
     #preprocessed_dfts = stacked_dfts
     # Normalize Fourier features
+    preprocessed_times = preprocess._standard_normalize(stacked_times)
+
+    for band, band_time in enumerate(preprocessed_times):
+        # Stack dft (mag ,phase..) features
+        features['band_%i/times'%band] = band_time
+
     preprocessed_dfts = preprocess._standard_normalize(stacked_dfts)
+
     for band, band_dft in enumerate(preprocessed_dfts):
         # Stack dft (mag ,phase..) features
         features['band_%i/dft'%band] = band_dft
@@ -189,8 +200,6 @@ def read_dataset(file_read_func, filenames, num_readers=64, shuffle=True, num_ep
     if num_readers > len(filenames):
         num_readers = len(filenames)
         tf.logging.warning('num_readers has been reduced to %d to match input file shards.' % num_readers)
-    print('""""""""""""""')
-    print(filenames)
     filename_dataset = tf.data.Dataset.from_tensor_slices(filenames)
     
     if shuffle:
@@ -259,8 +268,8 @@ def build_dataset(validation_fold, dataset_dir, batch_size=1, is_training=True,
                                           'band_%i/augmented_flux'%band: [None],
                                           'band_%i/flux_err'%band: [None],
                                           'band_%i/dft'%band: [None, 6],
-                                          'band_%i/dft_freqs'%band:[None],
-                                          'band_%i/dft_num_samples'%band:[],
+                                          'band_%i/times'%band: [None, 4],
+                                          'band_%i/dft/num_samples'%band:[],
                                           'band_%i/num_samples'%band:[]})
         if is_training:
             # Keep track of original flux (without augmentation)
