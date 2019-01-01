@@ -33,10 +33,17 @@ def model_fn(features, labels, mode, params ):
     global_step = tf.train.get_or_create_global_step()
 
     if params['model'] == 'fourier':
+        print('features')
+        print(features)
         dft_features = [features['band_%i/dft'%band] for band in range(NUM_BANDS)]
         num_samples = [features['band_%i/dft/num_samples'%band] for band in range(NUM_BANDS)]
 
+        print('Before embeddings')
+        print(dft_features)
         embeddings = rnn.rnn_logits(dft_features, num_samples, mode==tf.estimator.ModeKeys.TRAIN)
+
+        print('After embeddings')
+        print(embeddings)
         predictions = rnn.dense_logits(embeddings, NUM_CATEGORIES) 
 
     elif params['model'] == 'time':

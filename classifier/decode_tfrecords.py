@@ -62,7 +62,15 @@ class TfExampleDecoder():
         ## Specify how the TF-Examples are decoded.
         # Timeless features (Fixed len)
         keys_to_features = {'object/id': tf.FixedLenFeature((), tf.float32, default_value=0),
-                            'object/target': tf.FixedLenFeature((), tf.int64, default_value=0)}
+                            'object/target': tf.FixedLenFeature((), tf.int64, default_value=0),
+                            'ddf': tf.FixedLenFeature((), tf.int64, default_value=0),
+                            'hostgal_specz': tf.FixedLenFeature((), tf.float32, default_value=0),
+                            'hostgal_photoz': tf.FixedLenFeature((), tf.float32, default_value=0),
+                            'hostgal_photoz_err': tf.FixedLenFeature((), tf.float32, default_value=0),
+                            'distmod': tf.FixedLenFeature((), tf.float32, default_value=0),
+                            'mwebv': tf.FixedLenFeature((), tf.float32, default_value=0),
+                            }
+
 
         for band in range(NUM_BANDS):
             # Time dependent features by band (Var len)
@@ -78,7 +86,13 @@ class TfExampleDecoder():
                                      'band_%i/dft/proba'%band: tf.VarLenFeature(dtype=tf.float32)})
 
         items_to_handlers = {'object_id': tfexample_decoder.Tensor('object/id'),
-                             'target': tfexample_decoder.Tensor('object/target')}
+                             'target': tfexample_decoder.Tensor('object/target'),
+                             'ddf': tfexample_decoder.Tensor('ddf'),
+                             'hostgal_specz': tfexample_decoder.Tensor('hostgal_specz'),
+                             'hostgal_photoz': tfexample_decoder.Tensor('hostgal_photoz'),
+                             'hostgal_photoz_err': tfexample_decoder.Tensor('hostgal_photoz_err'),
+                             'distmod': tfexample_decoder.Tensor('distmod'),
+                             'mwebv': tfexample_decoder.Tensor('mwebv')}
 
         for band in range(NUM_BANDS):
             items_to_handlers.update({'band_%i/num_samples'%band: tfexample_decoder.Tensor('band_%i/num_samples'%band),
@@ -92,6 +106,7 @@ class TfExampleDecoder():
                                       'band_%i/dft/periodogram'%band: tfexample_decoder.Tensor('band_%i/dft/periodogram'%band),
                                       'band_%i/dft/proba'%band: tfexample_decoder.Tensor('band_%i/dft/proba'%band)})
 
+    
 
         self.num_bands = NUM_BANDS
         self.decoder = tfexample_decoder.TFExampleDecoder(keys_to_features, items_to_handlers)

@@ -197,11 +197,12 @@ def read_dataset(file_read_func, filenames, num_readers=64, shuffle=True, num_ep
     Returns:
       A tf.data.Dataset of (undecoded) tf-records based on config.
     """
-    buffer_size = 6000
+    buffer_size = 2 
     # Shard, shuffle, and read files.
     if num_readers > len(filenames):
         num_readers = len(filenames)
         tf.logging.warning('num_readers has been reduced to %d to match input file shards.' % num_readers)
+    num_readers = 1
     filename_dataset = tf.data.Dataset.from_tensor_slices(filenames)
     
     if shuffle:
@@ -217,7 +218,7 @@ def read_dataset(file_read_func, filenames, num_readers=64, shuffle=True, num_ep
     return records_dataset
 
 def build_dataset(validation_fold, dataset_dir, batch_size=1, is_training=True,
-                  transform_input_data_fn=None, num_prefetch_batches=64):
+                  transform_input_data_fn=None, num_prefetch_batches=1):
     """Builds a tf.data.Dataset.
 
     Builds a tf.data.Dataset by applying the 'transform_input_data_fn' on all
@@ -250,7 +251,7 @@ def build_dataset(validation_fold, dataset_dir, batch_size=1, is_training=True,
         return processed_tensors
 
     dataset = read_dataset(functools.partial(tf.data.TFRecordDataset,
-                                             buffer_size=64 * 1000 * 1000),
+                                             buffer_size=10),
                            decoder.filenames,
                            num_epochs=None if is_training else 1)
     # One parallel call per batch, batches are decoded in parallel
@@ -269,7 +270,7 @@ def build_dataset(validation_fold, dataset_dir, batch_size=1, is_training=True,
                                           'band_%i/preprocessed_time_diff'%band: [None],
                                           'band_%i/augmented_flux'%band: [None],
                                           'band_%i/flux_err'%band: [None],
-                                          'band_%i/dft'%band: [None, 6],
+                                          'band_%i/dft'%band: [None, 5],
                                           'band_%i/times'%band: [None, 4],
                                           'band_%i/dft/num_samples'%band:[],
                                           'band_%i/num_samples'%band:[]})
