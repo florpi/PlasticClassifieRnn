@@ -2,6 +2,7 @@ import os
 import numpy as np
 import tensorflow as tf
 import tfplot
+from tensorflow.python import debug as tf_debug
 
 # From our repo
 import utils
@@ -33,25 +34,19 @@ def model_fn(features, labels, mode, params ):
     global_step = tf.train.get_or_create_global_step()
 
     if params['model'] == 'fourier':
-        print('features')
-        print(features)
         dft_features = [features['band_%i/dft'%band] for band in range(NUM_BANDS)]
         num_samples = [features['band_%i/dft/num_samples'%band] for band in range(NUM_BANDS)]
 
-        print('Before embeddings')
-        print(dft_features)
         embeddings = rnn.rnn_logits(dft_features, num_samples, mode==tf.estimator.ModeKeys.TRAIN)
 
-        print('After embeddings')
-        print(embeddings)
-        predictions = rnn.dense_logits(embeddings, NUM_CATEGORIES) 
+        predictions = rnn.dense_logits(embeddings, NUM_CATEGORIES)
 
     elif params['model'] == 'time':
         time_features = [features['band_%i/times'%band] for band in range(NUM_BANDS)]
         num_samples = [features['band_%i/num_samples'%band] for band in range(NUM_BANDS)]
 
         embeddings = rnn.rnn_logits(time_features, num_samples, mode==tf.estimator.ModeKeys.TRAIN)
-        predictions = rnn.dense_logits(embeddings, NUM_CATEGORIES) 
+        predictions = rnn.dense_logits(embeddings, NUM_CATEGORIES)
 
 
     elif params['model'] == 'joint':
@@ -59,7 +54,7 @@ def model_fn(features, labels, mode, params ):
         num_samples = [features['band_%i/dft/num_samples'%band] for band in range(NUM_BANDS)]
 
         with tf.variable_scope("FourierEmbeddings"):
-            dft_embeddings = rnn.rnn_logits(dft_features, num_samples, 
+            dft_embeddings = rnn.rnn_logits(dft_features, num_samples,
                     mode == tf.estimator.ModeKeys.TRAIN)
 
         time_features = [features['band_%i/times'%band] for band in range(NUM_BANDS)]
@@ -68,10 +63,13 @@ def model_fn(features, labels, mode, params ):
         with tf.variable_scope("TemporalEmbeddings"):
             time_embeddings = rnn.rnn_logits(time_features, num_samples,
                     mode==tf.estimator.ModeKeys.TRAIN)
-        
-        embeddings = tf.concat([dft_embeddings, time_embeddings], axis=-1)
-        fcn = rnn.fcn_logits(embeddings, mode==tf.estimator.ModeKeys.TRAIN) 
-        predictions = rnn.dense_logits(fcn, NUM_CATEGORIES) 
+
+        embeddings = tf.concat([dft_embeddings,
+                                time_embeddings,
+                                tf.expand_dims(features['flux_range'], -1)],
+                               axis=-1)
+        fcn = rnn.fcn_logits(embeddings, mode==tf.estimator.ModeKeys.TRAIN)
+        predictions = rnn.dense_logits(fcn, NUM_CATEGORIES)
 
     else:
         raise ValueError("Not implemented, choose ['fourier', 'time', 'joint']'. Selected %s"%params['model'])
@@ -107,7 +105,7 @@ def model_fn(features, labels, mode, params ):
         train_op = tf.contrib.layers.optimize_loss(loss=total_loss,
                                                    global_step=global_step,
                                                    learning_rate=params.get('learning_rate', 1e-3),
-                                                   clip_gradients=params.get('clip_gradients_value', 10.),
+                                                   clip_gradients=params.get('clip_gradients_value', 50.),
                                                    optimizer='Adam',
                                                    name='')  # Preventing scope prefix on all variables.
 
@@ -160,11 +158,12 @@ def create_estimator_and_inputs(model, run_config, dataset_dir, learning_rate, v
     """
     """
     # Read dataset metadata
-    metadata = inputs.read_metadata(dataset_dir)
+    metadata = inputs.read_metadata(dataset_dir, validation_fold)
     train_stats = metadata.get('train_stats', None)
+
     # Create the input functions for TRAIN/EVAL/PREDICT.
-    train_input_fn = inputs.create_train_input_fn(dataset_dir, batch_size, train_stats=train_stats)
-    eval_input_fn = inputs.create_eval_input_fn(dataset_dir, batch_size, train_stats=train_stats)
+    train_input_fn = inputs.create_train_input_fn(dataset_dir, validation_fold, batch_size=batch_size, train_stats=train_stats)
+    eval_input_fn = inputs.create_eval_input_fn(dataset_dir, validation_fold, batch_size=batch_size, train_stats=train_stats)
     predict_input_fn = inputs.create_predict_input_fn(train_stats=train_stats)
 
     train_steps = None
@@ -201,6 +200,7 @@ def create_train_and_eval_specs(train_input_fn,
       Tuple of 'TrainSpec' and list of 'EvalSpecs'.
     """
     train_spec = tf.estimator.TrainSpec(input_fn=train_input_fn, max_steps=train_steps)
+                                        #hooks = [tf_debug.LocalCLIDebugHook()])
 
     eval_spec_name = '1'
     exporter_name = '{}_{}'.format(final_exporter_name, eval_spec_name)

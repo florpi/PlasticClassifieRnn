@@ -21,10 +21,10 @@ do
 	python3 classifier/model_main.py \
 	--model "$model" \
 	--model_dir train_"$model"/fold_"$i"_of_4/ \
-	--dataset_dir records/ \
+	--dataset_dir tfrecords/ \
 	--batch_size 150 \
 	--num_epochs 400 \
 	--learning_rate 1e-3 \
-	--validation_fold $i
+	--validation_fold $i 
 done
 

@@ -49,16 +49,18 @@ class TfExampleDecoder():
             filenames = glob.glob(os.path.join(dataset_dir,'*.tfrecord'))
             # Select all files that are not validation for training
             filenames = [f for f in filenames if int(f.split('fold_')[-1].split('_')[0]) \
-                    != validation_fold] 
+                    != validation_fold]
 
         else:
             filenames = glob.glob(os.path.join(dataset_dir, '*.tfrecord'))
             filenames = [f for f in filenames if int(f.split('fold_')[-1].split('_')[0]) \
-                    == validation_fold] 
+                    == validation_fold]
 
 
             filenames = [os.path.join(dataset_dir, filenames % validation_fold)]
-
+        selected_folds = list(set([str(int(f.split('fold_')[-1].split('_')[0])) for f in filenames]))
+        tf.logging.info('Building input pipeline for %s from folds: %s.'%('TRAIN' if is_training else 'EVAL',
+                                                                          ', '.join(selected_folds)))
         ## Specify how the TF-Examples are decoded.
         # Timeless features (Fixed len)
         keys_to_features = {'object/id': tf.FixedLenFeature((), tf.float32, default_value=0),
@@ -68,8 +70,7 @@ class TfExampleDecoder():
                             'hostgal_photoz': tf.FixedLenFeature((), tf.float32, default_value=0),
                             'hostgal_photoz_err': tf.FixedLenFeature((), tf.float32, default_value=0),
                             'distmod': tf.FixedLenFeature((), tf.float32, default_value=0),
-                            'mwebv': tf.FixedLenFeature((), tf.float32, default_value=0),
-                            }
+                            'mwebv': tf.FixedLenFeature((), tf.float32, default_value=0)}
 
 
         for band in range(NUM_BANDS):
@@ -106,11 +107,11 @@ class TfExampleDecoder():
                                       'band_%i/dft/periodogram'%band: tfexample_decoder.Tensor('band_%i/dft/periodogram'%band),
                                       'band_%i/dft/proba'%band: tfexample_decoder.Tensor('band_%i/dft/proba'%band)})
 
-    
+
 
         self.num_bands = NUM_BANDS
         self.decoder = tfexample_decoder.TFExampleDecoder(keys_to_features, items_to_handlers)
-        self.filenames = filenames 
+        self.filenames = filenames
 
     def decode(self, tf_example_string_tensor):
         """

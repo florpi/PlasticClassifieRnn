@@ -4,13 +4,14 @@ References:
     https://github.com/tensorflow/models/blob/1f484095c0981e2a62403b16256cb877749dfe94/research/object_detection/inputs.py
 """
 import os
+import glob
 import json
 import functools
 import tensorflow as tf
 
 # From our repo
 import utils
-import decode_tfrecords 
+import decode_tfrecords
 import preprocess
 
 NUM_BANDS = decode_tfrecords.NUM_BANDS
@@ -37,7 +38,7 @@ def _get_features_dict(input_dict, train_stats=None):
     encoder_feats = {}
     for band in range(NUM_BANDS):
         # Add time differences
-        features['band_%i/time_diff'%band] = tf.concat([[0], 
+        features['band_%i/time_diff'%band] = tf.concat([[0],
             input_dict['band_%i/mjd'%band][1:] - input_dict['band_%i/mjd'%band][:-1]], axis=0)
         # Keep track of number of samples
         features['band_%i/num_samples'%band] = input_dict['band_%i/num_samples'%band]
@@ -50,7 +51,7 @@ def _get_features_dict(input_dict, train_stats=None):
     # Flux normalization
     flux_list = [features['band_%i/augmented_flux'%band] for band in range(NUM_BANDS)]
     preprocessed_fluxes = preprocess._standard_normalize(flux_list)
-    all_fluxes = tf.stack(flux_list)
+    all_fluxes = tf.concat(flux_list, axis=0)
     features['flux_range'] = tf.log(tf.reduce_max(all_fluxes) - tf.reduce_min(all_fluxes))
     for band, flux in enumerate(preprocessed_fluxes):
         features['band_%i/preprocessed_flux'%band] = flux
@@ -63,18 +64,17 @@ def _get_features_dict(input_dict, train_stats=None):
 
     # temporal features
     stacked_times = [tf.stack([features['band_%i/time_diff'%band],
-                                input_dict['band_%i/flux'%band],
+                                input_dict['band_%i/flux'%band]/(1+input_dict['hostgal_photoz']),
                                 input_dict['band_%i/flux_err'%band],
                                 tf.to_float(input_dict['band_%i/detected'%band])], axis = -1) for band in range(NUM_BANDS)]
 
     # dft periodogram features
     stacked_dfts = [tf.stack([input_dict['band_%i/dft/freqs'%band],
-                              input_dict['band_%i/dft/mag'%band],
+                              input_dict['band_%i/dft/mag'%band]/tf.pow((1+input_dict['hostgal_photoz']), 2),
                               input_dict['band_%i/dft/phase'%band],
                               input_dict['band_%i/dft/periodogram'%band],
                               input_dict['band_%i/dft/proba'%band]], axis=-1) for band in range(NUM_BANDS)]
 
-    #preprocessed_dfts = stacked_dfts
     # Normalize Fourier features
     preprocessed_times = preprocess._standard_normalize(stacked_times)
 
@@ -89,7 +89,6 @@ def _get_features_dict(input_dict, train_stats=None):
         features['band_%i/dft'%band] = band_dft
         # dft signals have their own num of samples
         features['band_%i/dft/num_samples'%band] = tf.shape(input_dict['band_%i/dft/freqs'%band])[0]
-
 
     return features
 
@@ -117,7 +116,8 @@ def create_train_input_fn(dataset_dir, validation_fold, batch_size=1, train_stat
     Returns:
         'input_fn' for 'Estimator' in TRAIN mode.
     """
-
+    print('Input fn batch_size')
+    print(batch_size)
     def _train_input_fn(params=None):
         """Returns 'features' and 'labels' tensor dictionaries for training.
         Args:
@@ -129,12 +129,12 @@ def create_train_input_fn(dataset_dir, validation_fold, batch_size=1, train_stat
             tensor_dict = _augment(tensor_dict)
             return (_get_features_dict(tensor_dict, train_stats), _get_labels_dict(tensor_dict))
 
-        dataset = build_dataset(validation_fold, dataset_dir, batch_size, 
+        dataset = build_dataset(validation_fold, dataset_dir, batch_size,
                                 is_training=True, transform_input_data_fn=transform_fn)
         return dataset
     return _train_input_fn
 
-def create_eval_input_fn(dataset_dir, batch_size=1, train_stats=None):
+def create_eval_input_fn(dataset_dir, validation_fold, batch_size=1, train_stats=None):
     """Creates a eval 'input' function for 'Estimator'.
     Args:
 
@@ -197,14 +197,13 @@ def read_dataset(file_read_func, filenames, num_readers=64, shuffle=True, num_ep
     Returns:
       A tf.data.Dataset of (undecoded) tf-records based on config.
     """
-    buffer_size = 2 
+    buffer_size = 6000
     # Shard, shuffle, and read files.
     if num_readers > len(filenames):
         num_readers = len(filenames)
         tf.logging.warning('num_readers has been reduced to %d to match input file shards.' % num_readers)
-    num_readers = 1
     filename_dataset = tf.data.Dataset.from_tensor_slices(filenames)
-    
+
     if shuffle:
         filename_dataset = filename_dataset.shuffle(buffer_size)
     elif num_readers > 1:
@@ -290,12 +289,19 @@ def build_dataset(validation_fold, dataset_dir, batch_size=1, is_training=True,
     dataset = dataset.prefetch(num_prefetch_batches)
     return dataset
 
-def read_metadata(dataset_dir):
+def read_metadata(dataset_dir, validation_fold):
     """
     Read dataset metadata (train_moments, class_weights...) if available.
     """
     try:
-        with open(os.path.join(dataset_dir, 'metadata.json')) as metadata:
+        metadata_filenames = glob.glob(dataset_dir + '*-metadata.json')
+        # 'fold_%d_of_%d-metadata.json'
+        fold_metadata = [f for f in metadata_filenames if int(f.split('fold_')[-1].split('_')[0])==validation_fold]
+        if len(fold_metadata)!=1:
+            raise Exception('There must be one and only one metadata file fot each fold. Found: %s'%', '.join(fold_metadata))
+        else:
+            fold_metadata = fold_metadata[0]
+        with open(fold_metadata) as metadata:
             tf.logging.info('Reading dataset metadata.')
             return json.load(metadata)
     except FileNotFoundError:
