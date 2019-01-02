@@ -116,8 +116,6 @@ def create_train_input_fn(dataset_dir, validation_fold, batch_size=1, train_stat
     Returns:
         'input_fn' for 'Estimator' in TRAIN mode.
     """
-    print('Input fn batch_size')
-    print(batch_size)
     def _train_input_fn(params=None):
         """Returns 'features' and 'labels' tensor dictionaries for training.
         Args:
